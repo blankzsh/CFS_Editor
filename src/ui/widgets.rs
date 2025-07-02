@@ -66,7 +66,7 @@ pub fn form_row(ui: &mut Ui, label: &str, value: &mut String) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
         ui.add_space(5.0);
-        ui.label(label).on_hover_text(label);
+        ui.label(label);
         changed = ui.text_edit_singleline(value).changed();
     });
     changed
@@ -76,7 +76,7 @@ pub fn form_row(ui: &mut Ui, label: &str, value: &mut String) -> bool {
 pub fn readonly_form_row(ui: &mut Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
         ui.add_space(5.0);
-        ui.label(label).on_hover_text(label);
+        ui.label(label);
         ui.add_enabled(false, egui::TextEdit::singleline(&mut value.to_string()));
     });
 }
@@ -134,33 +134,48 @@ pub fn draw_bar_chart(ui: &mut Ui, values: &[i64], labels: &[String], title: &st
     ui.heading(title);
     ui.add_space(5.0);
     
+    // 为X轴标签预留更多空间
+    let x_axis_height = if bar_count > 8 { 60.0 } else { 30.0 };
+    let chart_height = height - x_axis_height;
+    
     // 绘制图表框架
-    let (response, painter) = ui.allocate_painter(Vec2::new(width, height), egui::Sense::hover());
+    let (response, painter) = ui.allocate_painter(Vec2::new(width, chart_height), egui::Sense::hover());
     let rect = response.rect;
     
     // 绘制背景
     painter.rect_filled(
         rect,
-        Rounding::same(4.0),
+        Rounding::same(6.0),
         Color32::from_rgb(250, 250, 250)
     );
     
     // 绘制边框
     painter.rect_stroke(
         rect,
-        Rounding::same(4.0),
-        Stroke::new(1.0, Color32::from_rgb(200, 200, 200))
+        Rounding::same(6.0),
+        Stroke::new(1.0, Color32::from_rgb(220, 220, 220))
     );
     
-    // 计算条形宽度和间距
-    let bar_spacing = 10.0;
+    // 计算条形宽度和间距 - 调整间距以适应更多条形
+    let bar_spacing = if bar_count > 10 { 5.0 } else { 10.0 };
     let bar_width = (width - (bar_count as f32 + 1.0) * bar_spacing) / bar_count as f32;
+    
+    // 计算Y轴刻度的最大值（向上取整到合适的数值）
+    let max_display_value = if max_value < 10 {
+        max_value + 1
+    } else if max_value < 100 {
+        ((max_value + 9) / 10) * 10
+    } else if max_value < 1000 {
+        ((max_value + 99) / 100) * 100
+    } else {
+        ((max_value + 999) / 1000) * 1000
+    };
     
     // 绘制Y轴刻度线
     let y_ticks = 5;
     for i in 0..=y_ticks {
         let y_pos = rect.min.y + rect.height() * (1.0 - i as f32 / y_ticks as f32);
-        let tick_value = max_value * i / y_ticks;
+        let tick_value = max_display_value * i / y_ticks;
         
         // 绘制水平辅助线
         painter.line_segment(
@@ -178,11 +193,25 @@ pub fn draw_bar_chart(ui: &mut Ui, values: &[i64], labels: &[String], title: &st
         );
     }
     
+    // 定义条形图颜色
+    let colors = [
+        Color32::from_rgb(100, 150, 250), // 蓝色
+        Color32::from_rgb(250, 150, 100), // 橙色
+        Color32::from_rgb(100, 250, 150), // 绿色
+        Color32::from_rgb(250, 100, 150), // 粉色
+        Color32::from_rgb(150, 100, 250), // 紫色
+        Color32::from_rgb(150, 250, 100), // 黄绿色
+    ];
+    
     // 绘制条形
     for (i, &value) in values.iter().enumerate() {
-        let bar_height = (value as f32 / max_value as f32) * (height - 30.0);
+        // 计算条形高度（相对于max_display_value而非max_value）
+        let bar_height = (value as f32 / max_display_value as f32) * (rect.height() - 20.0);
         let x = rect.min.x + bar_spacing + i as f32 * (bar_width + bar_spacing);
-        let y = rect.max.y - 20.0 - bar_height;
+        let y = rect.max.y - bar_height;
+        
+        // 选择颜色
+        let color = colors[i % colors.len()];
         
         // 绘制条形
         painter.rect_filled(
@@ -190,25 +219,88 @@ pub fn draw_bar_chart(ui: &mut Ui, values: &[i64], labels: &[String], title: &st
                 pos2(x, y),
                 Vec2::new(bar_width, bar_height)
             ),
-            Rounding::same(2.0),
-            Color32::from_rgb(100, 150, 250)
+            Rounding::same(4.0),
+            color
         );
         
-        // 绘制数值
-        painter.text(
-            pos2(x + bar_width / 2.0, y - 5.0),
-            Align2::CENTER_BOTTOM,
-            value.to_string(),
-            egui::FontId::proportional(10.0),
-            Color32::DARK_GRAY
+        // 绘制条形边框
+        painter.rect_stroke(
+            Rect::from_min_size(
+                pos2(x, y),
+                Vec2::new(bar_width, bar_height)
+            ),
+            Rounding::same(4.0),
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 100))
         );
         
-        // 绘制标签
-        if i < labels.len() {
+        // 绘制数值（只有当值足够大时才显示）
+        if bar_height > 20.0 {
+            // 绘制白色背景确保文字清晰可见
+            let font_id = egui::FontId::proportional(10.0);
+            let text = value.to_string();
+            let galley = painter.layout_no_wrap(
+                text.clone(),
+                font_id.clone(),
+                Color32::DARK_GRAY
+            );
+            let text_pos = pos2(x + bar_width / 2.0, y - 5.0);
+            let text_rect = Rect::from_center_size(
+                text_pos,
+                galley.size() + Vec2::new(6.0, 4.0)
+            );
+            painter.rect_filled(
+                text_rect,
+                Rounding::same(2.0),
+                Color32::from_rgba_unmultiplied(255, 255, 255, 220)
+            );
+            
+            // 绘制数值文本
             painter.text(
-                pos2(x + bar_width / 2.0, rect.max.y - 10.0),
+                text_pos,
                 Align2::CENTER_BOTTOM,
-                &labels[i],
+                text,
+                font_id,
+                Color32::DARK_GRAY
+            );
+        }
+    }
+    
+    // 在图表下方绘制X轴标签
+    ui.add_space(5.0);
+    
+    // 为标签创建一个新的绘图区域
+    let (label_response, label_painter) = ui.allocate_painter(Vec2::new(width, x_axis_height), egui::Sense::hover());
+    let label_rect = label_response.rect;
+    
+    // 绘制标签
+    for (i, label) in labels.iter().enumerate() {
+        let x = rect.min.x + bar_spacing + i as f32 * (bar_width + bar_spacing) + bar_width / 2.0;
+        let y = label_rect.min.y + 5.0;
+        
+        // 如果标签太多，需要旋转显示
+        if bar_count > 8 {
+            // 创建旋转标签
+            let font_id = egui::FontId::proportional(9.0);
+            
+            // 计算旋转角度（45度）
+            let angle = std::f32::consts::PI / 4.0;
+            
+            // 绘制旋转文本
+            // 注意：egui不直接支持文本旋转，所以我们使用倾斜的方式来模拟
+                
+            label_painter.text(
+                pos2(x, y),
+                Align2::LEFT_TOP,
+                label,
+                font_id,
+                Color32::DARK_GRAY
+            );
+        } else {
+            // 正常显示标签
+            label_painter.text(
+                pos2(x, y),
+                Align2::CENTER_TOP,
+                label,
                 egui::FontId::proportional(10.0),
                 Color32::DARK_GRAY
             );
@@ -216,99 +308,8 @@ pub fn draw_bar_chart(ui: &mut Ui, values: &[i64], labels: &[String], title: &st
     }
 }
 
-/// 绘制简单的饼图
+/// 绘制简单的饼图（已废弃，请使用visualization.rs中的实现）
 pub fn draw_pie_chart(ui: &mut Ui, values: &[i64], labels: &[String], title: &str, size: f32) {
-    if values.is_empty() {
-        return;
-    }
-    
-    // 图表标题
     ui.heading(title);
-    ui.add_space(5.0);
-    
-    let total: i64 = values.iter().sum();
-    if total <= 0 {
-        return;
-    }
-    
-    // 分配绘图区域
-    let (response, painter) = ui.allocate_painter(Vec2::new(size, size), egui::Sense::hover());
-    let rect = response.rect;
-    
-    // 计算圆心和半径
-    let center = rect.center();
-    let radius = rect.width().min(rect.height()) * 0.4;
-    
-    // 定义颜色
-    let colors = [
-        Color32::from_rgb(100, 150, 250),
-        Color32::from_rgb(250, 150, 100),
-        Color32::from_rgb(100, 250, 150),
-        Color32::from_rgb(250, 100, 150),
-        Color32::from_rgb(150, 100, 250),
-        Color32::from_rgb(150, 250, 100),
-    ];
-    
-    // 绘制饼图
-    let mut start_angle = 0.0;
-    for (i, &value) in values.iter().enumerate() {
-        let angle = 2.0 * std::f32::consts::PI * (value as f32 / total as f32);
-        let color = colors[i % colors.len()];
-        
-        // 绘制扇形
-        let mut points = Vec::new();
-        points.push(center);
-        
-        // 添加弧线上的点
-        let steps = 32;
-        for j in 0..=steps {
-            let a = start_angle + angle * (j as f32 / steps as f32);
-            let x = center.x + radius * a.cos();
-            let y = center.y + radius * a.sin();
-            points.push(pos2(x, y));
-        }
-        
-        // 创建路径形状
-        let path = PathShape {
-            points,
-            closed: true,
-            fill: color,
-            stroke: Stroke::new(1.0, Color32::WHITE),
-        };
-        
-        painter.add(egui::Shape::Path(path));
-        
-        // 绘制标签线和文本
-        let mid_angle = start_angle + angle / 2.0;
-        let text_distance = radius * 1.3;
-        let text_pos = pos2(
-            center.x + text_distance * mid_angle.cos(),
-            center.y + text_distance * mid_angle.sin()
-        );
-        
-        // 绘制连接线
-        let line_end = pos2(
-            center.x + radius * 1.1 * mid_angle.cos(),
-            center.y + radius * 1.1 * mid_angle.sin()
-        );
-        painter.line_segment(
-            [line_end, text_pos],
-            Stroke::new(1.0, Color32::DARK_GRAY)
-        );
-        
-        // 绘制标签和百分比
-        if i < labels.len() {
-            let percentage = (value as f32 / total as f32) * 100.0;
-            let text = format!("{}: {:.1}%", labels[i], percentage);
-            painter.text(
-                text_pos,
-                Align2::CENTER_CENTER,
-                text,
-                egui::FontId::proportional(10.0),
-                Color32::DARK_GRAY
-            );
-        }
-        
-        start_angle += angle;
-    }
+    ui.label("请使用visualization.rs中的实现");
 } 

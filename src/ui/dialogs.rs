@@ -204,8 +204,8 @@ impl MessageDialog {
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if widgets::mac_primary_button(ui, "确定") {
-                            self.open = false;
-                        }
+                    self.open = false;
+                }
                     });
                 });
             });
@@ -228,22 +228,22 @@ impl ConfirmDialog {
             confirmed: false,
         }
     }
-    
+
     pub fn show_confirm(&mut self, title: &str, message: &str) {
         self.title = title.to_string();
         self.message = message.to_string();
         self.open = true;
         self.confirmed = false;
     }
-    
+
     pub fn show(&mut self, ctx: &Context) -> bool {
         if !self.open {
             return false;
         }
-        
+
         let mut closed = false;
         let mut confirmed = false;
-        
+
         setup_mac_window(&self.title)
             .min_size(Vec2::new(350.0, 150.0))
             .show(ctx, |ui| {
@@ -255,18 +255,18 @@ impl ConfirmDialog {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if widgets::mac_primary_button(ui, "确定") {
                             confirmed = true;
-                            closed = true;
-                        }
+                        closed = true;
+                    }
                         
                         ui.add_space(10.0);
                         
                         if widgets::mac_button(ui, "取消") {
-                            closed = true;
-                        }
+                        closed = true;
+                    }
                     });
                 });
             });
-        
+
         if closed {
             self.open = false;
             self.confirmed = confirmed;

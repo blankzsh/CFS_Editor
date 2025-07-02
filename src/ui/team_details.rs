@@ -116,22 +116,46 @@ impl TeamDetailsView {
             widgets::titled_frame("球队详情", ui, |ui| {
                 // Logo区域
                 ui.vertical_centered(|ui| {
-                    if let Some(texture) = &self.logo_texture {
-                        let logo = Image::new(texture)
-                            .max_size(egui::vec2(128.0, 128.0));
-                        if ui.add(logo).clicked() {
-                            logo_clicked = true;
-                        }
-                    } else {
-                        let response = ui.add(Label::new(
-                            RichText::new("无Logo\n点击添加").heading().color(Color32::GRAY)
-                        ).sense(egui::Sense::click()));
-                        
-                        if response.clicked() {
-                            logo_clicked = true;
-                        }
-                    }
-                    ui.label("点击可更改Logo");
+                    // 创建一个可视的框架，使Logo区域看起来可点击
+                    egui::Frame::none()
+                        .fill(Color32::from_rgb(245, 245, 245))
+                        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(200, 200, 200)))
+                        .rounding(egui::Rounding::same(8.0))
+                        .inner_margin(egui::Margin::same(10.0))
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                let mut response = if let Some(texture) = &self.logo_texture {
+                                    // 显示Logo图像
+                                    let logo = Image::new(texture)
+                                        .max_size(egui::vec2(128.0, 128.0));
+                                    ui.add(logo.sense(egui::Sense::click()))
+                                } else {
+                                    // 显示"无Logo"文本
+                                    ui.add(Label::new(
+                                        RichText::new("无Logo\n点击添加").heading().color(Color32::GRAY)
+                                    ).sense(egui::Sense::click()))
+                                };
+                                
+                                // 添加明确的按钮提示
+                                ui.add_space(5.0);
+                                ui.add(egui::Label::new(
+                                    RichText::new("📷 点击更换Logo")
+                                        .strong()
+                                        .color(Color32::from_rgb(50, 100, 200))
+                                ));
+                                
+                                // 检查点击
+                                if response.clicked() {
+                                    logo_clicked = true;
+                                }
+                                
+                                // 鼠标悬停效果
+                                if response.hovered() {
+                                    response.mark_changed(); // 确保UI会更新
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                            });
+                        });
                 });
 
                 ui.add_space(10.0);

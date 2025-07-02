@@ -379,19 +379,6 @@ impl TeamListView {
                                     selected_team_id = Some(team.id);
                                     info!("选择球队: {} (ID: {})", team.name, team.id);
                                 }
-                                
-                                response.on_hover_ui(|ui| {
-                                    widgets::mac_card(ui, |ui| {
-                                        widgets::label_value(ui, "ID:", &team.id.to_string());
-                                        widgets::label_value(ui, "地区:", &team.location);
-                                        widgets::label_value(ui, "联赛ID:", &team.league_id.to_string());
-                                        widgets::label_value(ui, "昵称:", &team.nickname);
-                                        widgets::label_value(ui, "成立年份:", &team.found_year.to_string());
-                                        widgets::label_value(ui, "财富:", &format!("{} 万", team.wealth));
-                                        widgets::label_value(ui, "主场:", &team.stadium_name);
-                                        widgets::label_value(ui, "球迷数:", &format!("{} 人", team.supporter_count));
-                                    });
-                                });
                             }
                         });
                 });

@@ -88,27 +88,33 @@ impl TeamEditorApp {
     }
 
     fn load_database(&mut self, ctx: &Context) {
+        if self.database.is_connected() {
+            self.show_message("警告", "已经连接到数据库");
+            return;
+        }
+        
+        // 使用native-dialog库打开文件对话框
         let dialog = FileDialog::new()
-            .add_filter("SQLite 数据库", &["db"])
+            .add_filter("SQLite数据库", &["db", "sqlite", "sqlite3"])
             .add_filter("所有文件", &["*"])
             .show_open_single_file();
         
         if let Ok(Some(path)) = dialog {
             match self.database.connect(&path) {
                 Ok(_) => {
+                    let path_str = path.display().to_string();
+                    self.show_message("成功", &format!("已连接到数据库: {}", path_str));
+                    self.set_status(&format!("已连接到数据库: {}", path_str));
+                    
+                    // 加载数据
                     if let Err(e) = self.load_data(ctx) {
                         self.show_message("错误", &format!("加载数据失败: {}", e));
                         error!("加载数据失败: {}", e);
-                        return;
                     }
-                    
-                    let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                    self.show_message("成功", &format!("数据库加载成功: {}", filename));
-                    self.set_status(&format!("已加载数据库: {}", filename));
                 },
                 Err(e) => {
-                    self.show_message("错误", &format!("加载数据库失败: {}", e));
-                    error!("加载数据库失败: {}", e);
+                    self.show_message("错误", &format!("连接数据库失败: {}", e));
+                    error!("连接数据库失败: {}", e);
                 }
             }
         }
@@ -274,6 +280,7 @@ impl TeamEditorApp {
 
         if let Some(team_id) = self.team_list.get_selected_team_id() {
             if let Some(db_dir) = self.database.get_db_directory() {
+                // 使用native_dialog库打开文件对话框
                 let dialog = FileDialog::new()
                     .add_filter("图片文件", &["png", "jpg", "jpeg", "bmp", "gif"])
                     .add_filter("所有文件", &["*"])
@@ -282,17 +289,70 @@ impl TeamEditorApp {
                 if let Ok(Some(path)) = dialog {
                     let logo_path = utils::create_logo_path(&db_dir, team_id);
                     
+                    // 确保目标目录存在
+                    if let Some(parent) = logo_path.parent() {
+                        if !parent.exists() {
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                self.show_message("错误", &format!("创建目录失败: {}", e));
+                                error!("创建目录失败: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                    
                     match utils::load_and_resize_image(&path, 128, 128) {
                         Ok(img) => {
+                            // 先尝试删除旧文件（如果存在）
+                            if logo_path.exists() {
+                                // 多次尝试删除旧文件，以防文件被锁定
+                                let mut retry_count = 0;
+                                let max_retries = 3;
+                                let mut delete_success = false;
+                                
+                                while retry_count < max_retries && !delete_success {
+                                    match std::fs::remove_file(&logo_path) {
+                                        Ok(_) => {
+                                            delete_success = true;
+                                            info!("成功删除旧Logo文件: {:?}", logo_path);
+                                        },
+                                        Err(e) => {
+                                            error!("删除旧Logo文件失败 (尝试 {}/{}): {}", 
+                                                   retry_count + 1, max_retries, e);
+                                            // 等待一小段时间再重试
+                                            std::thread::sleep(std::time::Duration::from_millis(100));
+                                            retry_count += 1;
+                                        }
+                                    }
+                                }
+                                
+                                if !delete_success {
+                                    self.show_message("警告", "无法删除旧Logo文件，将尝试直接覆盖");
+                                }
+                            }
+                            
+                            // 尝试保存新图片
                             if let Err(e) = utils::save_image(&img, &logo_path) {
                                 self.show_message("错误", &format!("保存Logo失败: {}", e));
                                 error!("保存Logo失败: {}", e);
                             } else {
+                                // 确认文件已保存
+                                if !logo_path.exists() {
+                                    self.show_message("错误", "Logo文件保存失败，文件不存在");
+                                    error!("Logo文件保存失败，文件不存在: {:?}", logo_path);
+                                    return;
+                                }
+                                
                                 // 重新加载Logo
                                 if let Err(e) = self.team_details.load_logo(ctx, &db_dir, team_id) {
                                     error!("重新加载Logo失败: {}", e);
+                                    self.show_message("警告", &format!("Logo已保存，但重新加载失败: {}", e));
+                                } else {
+                                    self.show_message("成功", "Logo已替换");
+                                    info!("Logo已替换: {:?}", logo_path);
                                 }
-                                self.show_message("成功", "Logo已替换");
+                                
+                                // 强制重绘界面
+                                ctx.request_repaint();
                             }
                         },
                         Err(e) => {
@@ -356,6 +416,7 @@ impl TeamEditorApp {
             return;
         }
 
+        // 使用native-dialog库打开文件对话框
         let dialog = FileDialog::new()
             .add_filter("CSV文件", &["csv"])
             .add_filter("所有文件", &["*"])
