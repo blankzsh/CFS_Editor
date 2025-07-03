@@ -5,11 +5,15 @@ edition = "2021"
 authors = ["卡尔纳斯"]
 description = "CFS Team Editor - An application for managing and editing football team data"
 
+# 添加Windows子系统配置，使用windows_subsystem = "windows"来隐藏控制台窗口
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
 [dependencies]
 eframe = "0.24.1"
 egui = "0.24.1"
 egui_extras = "0.24.1"
-image = "0.24.8"
+image = { version = "0.24.8", features = ["png", "jpeg"] }
 rusqlite = { version = "0.30.0", features = ["bundled"] }
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
@@ -20,3 +24,11 @@ chrono = "0.4.31"
 anyhow = "1.0.75"
 thiserror = "1.0.50"
 mime_guess = "2.0.5"
+
+# 添加发布模式的优化配置
+[profile.release]
+opt-level = 3        # 最高级别优化
+lto = true           # 链接时优化
+codegen-units = 1    # 降低并行度以提高优化
+panic = 'abort'      # 在panic时直接中止，减小二进制文件大小
+strip = true         # 剥离符号信息

@@ -1,9 +1,9 @@
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("数据库错误: {0}")]
-    DatabaseError(#[from] rusqlite::Error),
+    DatabaseError(String),
 
     #[error("JSON解析错误: {0}")]
     JsonError(#[from] serde_json::Error),
@@ -28,6 +28,9 @@ pub enum AppError {
 
     #[error("未知错误: {0}")]
     Unknown(String),
+
+    #[error("SQLite错误: {0}")]
+    SqliteError(#[from] rusqlite::Error),
 }
 
 pub type Result<T> = std::result::Result<T, AppError>; 

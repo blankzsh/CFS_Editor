@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use egui::{Context, CentralPanel, SidePanel, TopBottomPanel, Ui, Color32};
+use egui::{Context, CentralPanel, SidePanel, TopBottomPanel, Ui, Color32, Layout, Align};
 use eframe::{App, CreationContext, Frame};
 use log::{error, info};
 use native_dialog::FileDialog;
@@ -23,6 +23,8 @@ const AUTO_SAVE_INTERVAL: u64 = 30;
 enum ActiveTab {
     TeamDetails,
     Visualization,
+    // SponsorEditor已从实际功能中移除，但UI保留
+    SponsorEditor,
 }
 
 impl ActiveTab {
@@ -30,6 +32,7 @@ impl ActiveTab {
         match self {
             ActiveTab::TeamDetails => "球队详情",
             ActiveTab::Visualization => "数据可视化",
+            ActiveTab::SponsorEditor => "杂项编辑器",
         }
     }
 }
@@ -151,217 +154,6 @@ impl TeamEditorApp {
                 "确认保存",
                 "您确定要保存对球队数据的修改吗？"
             );
-        } else {
-            self.show_message("警告", "请先选择一个球队");
-        }
-    }
-
-    fn handle_confirm_save(&mut self, ctx: &Context) {
-        if self.confirm_dialog.confirmed {
-            if let Some(team) = self.team_details.get_edited_team() {
-                match self.database.update_team(&team) {
-                    Ok(_) => {
-                        // 刷新数据
-                        if let Err(e) = self.load_data(ctx) {
-                            error!("刷新数据失败: {}", e);
-                        }
-                        
-                        // 重新选择当前球队
-                        self.team_list.select_team_by_id(team.id);
-                        if let Some(team_id) = self.team_list.get_selected_team_id() {
-                            self.select_team(team_id, ctx);
-                        }
-                        
-                        self.show_message("成功", "球队数据已保存");
-                        self.set_status(&format!("已保存球队 {} 的修改", team.name));
-                        
-                        // 重置自动保存状态
-                        self.has_unsaved_changes = false;
-                        self.last_auto_save = Instant::now();
-                    },
-                    Err(e) => {
-                        self.show_message("错误", &format!("保存失败: {}", e));
-                        error!("保存球队数据失败: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    fn auto_save(&mut self, ctx: &Context) -> bool {
-        if !self.auto_save_enabled || !self.has_unsaved_changes || !self.database.is_connected() {
-            return false;
-        }
-        
-        if let Some(team) = self.team_details.get_edited_team() {
-            match self.database.update_team(&team) {
-                Ok(_) => {
-                    // 刷新数据但不显示消息
-                    if let Err(e) = self.load_data(ctx) {
-                        error!("自动保存后刷新数据失败: {}", e);
-                    }
-                    
-                    // 重新选择当前球队
-                    self.team_list.select_team_by_id(team.id);
-                    if let Some(team_id) = self.team_list.get_selected_team_id() {
-                        self.select_team(team_id, ctx);
-                    }
-                    
-                    self.set_status(&format!("已自动保存球队 {} 的修改", team.name));
-                    info!("自动保存成功: 球队 {}", team.name);
-                    
-                    // 重置自动保存状态
-                    self.has_unsaved_changes = false;
-                    self.last_auto_save = Instant::now();
-                    self.auto_save_countdown = AUTO_SAVE_INTERVAL;
-                    
-                    return true;
-                },
-                Err(e) => {
-                    error!("自动保存失败: {}", e);
-                    return false;
-                }
-            }
-        }
-        
-        false
-    }
-
-    fn toggle_auto_save(&mut self) {
-        self.auto_save_enabled = !self.auto_save_enabled;
-        if self.auto_save_enabled {
-            self.set_status("自动保存已启用");
-        } else {
-            self.set_status("自动保存已禁用");
-        }
-    }
-
-    fn update_auto_save_timer(&mut self) {
-        if !self.auto_save_enabled || !self.has_unsaved_changes {
-            return;
-        }
-        
-        let elapsed = self.last_auto_save.elapsed().as_secs();
-        if elapsed >= AUTO_SAVE_INTERVAL {
-            self.auto_save_countdown = 0;
-        } else {
-            self.auto_save_countdown = AUTO_SAVE_INTERVAL - elapsed;
-        }
-    }
-
-    fn select_team(&mut self, team_id: i64, ctx: &Context) {
-        if let Some(team) = self.team_list.teams.iter().find(|t| t.id == team_id).cloned() {
-            // 更新球队详情
-            self.team_details.set_team(team);
-            
-            // 加载Logo
-            if let Some(db_dir) = self.database.get_db_directory() {
-                if let Err(e) = self.team_details.load_logo(ctx, &db_dir, team_id) {
-                    error!("加载Logo失败: {}", e);
-                }
-            }
-            
-            // 更新员工列表
-            self.staff_list.update_team_staff(team_id);
-            
-            self.set_status(&format!("已选择球队: ID={}", team_id));
-            
-            // 重置自动保存状态
-            self.has_unsaved_changes = false;
-            self.last_auto_save = Instant::now();
-        }
-    }
-
-    fn replace_logo(&mut self, ctx: &Context) {
-        if !self.database.is_connected() {
-            self.show_message("警告", "请先加载数据库");
-            return;
-        }
-
-        if let Some(team_id) = self.team_list.get_selected_team_id() {
-            if let Some(db_dir) = self.database.get_db_directory() {
-                // 使用native_dialog库打开文件对话框
-                let dialog = FileDialog::new()
-                    .add_filter("图片文件", &["png", "jpg", "jpeg", "bmp", "gif"])
-                    .add_filter("所有文件", &["*"])
-                    .show_open_single_file();
-                
-                if let Ok(Some(path)) = dialog {
-                    let logo_path = utils::create_logo_path(&db_dir, team_id);
-                    
-                    // 确保目标目录存在
-                    if let Some(parent) = logo_path.parent() {
-                        if !parent.exists() {
-                            if let Err(e) = std::fs::create_dir_all(parent) {
-                                self.show_message("错误", &format!("创建目录失败: {}", e));
-                                error!("创建目录失败: {}", e);
-                                return;
-                            }
-                        }
-                    }
-                    
-                    match utils::load_and_resize_image(&path, 128, 128) {
-                        Ok(img) => {
-                            // 先尝试删除旧文件（如果存在）
-                            if logo_path.exists() {
-                                // 多次尝试删除旧文件，以防文件被锁定
-                                let mut retry_count = 0;
-                                let max_retries = 3;
-                                let mut delete_success = false;
-                                
-                                while retry_count < max_retries && !delete_success {
-                                    match std::fs::remove_file(&logo_path) {
-                                        Ok(_) => {
-                                            delete_success = true;
-                                            info!("成功删除旧Logo文件: {:?}", logo_path);
-                                        },
-                                        Err(e) => {
-                                            error!("删除旧Logo文件失败 (尝试 {}/{}): {}", 
-                                                   retry_count + 1, max_retries, e);
-                                            // 等待一小段时间再重试
-                                            std::thread::sleep(std::time::Duration::from_millis(100));
-                                            retry_count += 1;
-                                        }
-                                    }
-                                }
-                                
-                                if !delete_success {
-                                    self.show_message("警告", "无法删除旧Logo文件，将尝试直接覆盖");
-                                }
-                            }
-                            
-                            // 尝试保存新图片
-                            if let Err(e) = utils::save_image(&img, &logo_path) {
-                                self.show_message("错误", &format!("保存Logo失败: {}", e));
-                                error!("保存Logo失败: {}", e);
-                            } else {
-                                // 确认文件已保存
-                                if !logo_path.exists() {
-                                    self.show_message("错误", "Logo文件保存失败，文件不存在");
-                                    error!("Logo文件保存失败，文件不存在: {:?}", logo_path);
-                                    return;
-                                }
-                                
-                                // 重新加载Logo
-                                if let Err(e) = self.team_details.load_logo(ctx, &db_dir, team_id) {
-                                    error!("重新加载Logo失败: {}", e);
-                                    self.show_message("警告", &format!("Logo已保存，但重新加载失败: {}", e));
-                                } else {
-                                    self.show_message("成功", "Logo已替换");
-                                    info!("Logo已替换: {:?}", logo_path);
-                                }
-                                
-                                // 强制重绘界面
-                                ctx.request_repaint();
-                            }
-                        },
-                        Err(e) => {
-                            self.show_message("错误", &format!("加载图片失败: {}", e));
-                            error!("加载图片失败: {}", e);
-                        }
-                    }
-                }
-            }
         } else {
             self.show_message("警告", "请先选择一个球队");
         }
@@ -516,62 +308,280 @@ impl TeamEditorApp {
 
     fn ui_top_panel(&mut self, ctx: &Context, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            ui.add_space(5.0);
-            if crate::ui::widgets::mac_button(ui, "加载数据库") {
+            // 文件菜单
+            ui.menu_button("文件", |ui| {
+                if ui.button("加载数据库").clicked() {
+                    ui.close_menu();
                 self.load_database(ctx);
             }
+                
+                if ui.button("关闭数据库").clicked() {
+                    ui.close_menu();
+                    if let Err(e) = self.database.close() {
+                        self.show_message("错误", &format!("关闭数据库失败: {}", e));
+                        error!("关闭数据库失败: {}", e);
+                    } else {
+                        self.set_status("数据库已关闭");
+                    }
+                }
+                
+                ui.separator();
+                
+                if ui.button("导出球队列表").clicked() {
+                    ui.close_menu();
+                    self.export_team_list();
+                }
+                
+                ui.separator();
+                
+                if ui.button("退出").clicked() {
+                    ui.close_menu();
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
             
-            if crate::ui::widgets::mac_primary_button(ui, "保存球队修改") {
+            // 编辑菜单
+            ui.menu_button("编辑", |ui| {
+                if ui.button("保存球队修改").clicked() {
+                    ui.close_menu();
                 self.save_team_changes();
             }
             
-            if crate::ui::widgets::mac_button(ui, "批量编辑") {
+                if ui.button("批量编辑").clicked() {
+                    ui.close_menu();
                 self.open_bulk_edit();
             }
             
-            // 自动保存开关
+                ui.separator();
+                
             let auto_save_text = if self.auto_save_enabled {
-                format!("自动保存: 开 ({}秒)", self.auto_save_countdown)
+                    "禁用自动保存"
             } else {
-                "自动保存: 关".to_string()
+                    "启用自动保存"
             };
             
             if ui.button(auto_save_text).clicked() {
+                    ui.close_menu();
                 self.toggle_auto_save();
             }
+            });
             
-            ui.separator();
+            // 视图菜单
+            ui.menu_button("视图", |ui| {
+                if ui.selectable_label(self.active_tab == ActiveTab::TeamDetails, "球队详情").clicked() {
+                    ui.close_menu();
+                    self.active_tab = ActiveTab::TeamDetails;
+                }
+                
+                if ui.selectable_label(self.active_tab == ActiveTab::Visualization, "数据可视化").clicked() {
+                    ui.close_menu();
+                    self.active_tab = ActiveTab::Visualization;
+                }
+                
+                if ui.selectable_label(self.active_tab == ActiveTab::SponsorEditor, "杂项编辑器").clicked() {
+                    ui.close_menu();
+                    self.active_tab = ActiveTab::SponsorEditor;
+                }
+            });
             
-            ui.strong("状态:");
-            ui.add_space(5.0);
-            ui.label(&self.status_message);
-            ui.add_space(5.0);
+            // 帮助菜单
+            ui.menu_button("帮助", |ui| {
+                if ui.button("关于").clicked() {
+                    ui.close_menu();
+                    self.show_message(
+                        "关于",
+                        "CFS球队编辑器 v0.1.0\n作者: 卡尔纳斯\n\n用于编辑和管理CFS游戏的球队数据。"
+                    );
+                }
+            });
+            
+            // 显示当前标签页
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.label(self.active_tab.as_str());
+            });
         });
     }
 
     fn ui_bottom_panel(&mut self, _ctx: &Context, ui: &mut Ui) {
         ui.horizontal(|ui| {
+            ui.strong("状态:");
             ui.add_space(5.0);
-            ui.strong("球队总数:");
-            ui.add_space(2.0);
-            ui.label(format!("{}", self.team_list.teams.len()));
-            ui.separator();
-            ui.label("CFS球队编辑器 BY.卡尔纳斯 | Rust版本 v1.0.0");
-            ui.add_space(5.0);
+            ui.label(&self.status_message);
+            
+            // 显示自动保存状态
+            if self.auto_save_enabled {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.label(format!("自动保存: {}秒", self.auto_save_countdown));
+                });
+            }
         });
+    }
+
+    fn toggle_auto_save(&mut self) {
+        self.auto_save_enabled = !self.auto_save_enabled;
+        if self.auto_save_enabled {
+            self.set_status("自动保存已启用");
+        } else {
+            self.set_status("自动保存已禁用");
+        }
+    }
+
+    fn update_auto_save_timer(&mut self) {
+        if !self.auto_save_enabled || !self.has_unsaved_changes {
+            return;
+        }
+        
+        let elapsed = self.last_auto_save.elapsed().as_secs();
+        if elapsed >= AUTO_SAVE_INTERVAL {
+            self.auto_save_countdown = 0;
+        } else {
+            self.auto_save_countdown = AUTO_SAVE_INTERVAL - elapsed;
+        }
+    }
+
+    fn auto_save(&mut self, ctx: &Context) -> bool {
+        if !self.auto_save_enabled || !self.has_unsaved_changes || !self.database.is_connected() {
+            return false;
+        }
+        
+        if let Some(team) = self.team_details.get_edited_team() {
+            match self.database.update_team(&team) {
+                Ok(_) => {
+                    // 刷新数据但不显示消息
+                    if let Err(e) = self.load_data(ctx) {
+                        error!("自动保存后刷新数据失败: {}", e);
+                    }
+                    
+                    // 重新选择当前球队
+                    self.team_list.select_team_by_id(team.id);
+                    if let Some(team_id) = self.team_list.get_selected_team_id() {
+                        self.select_team(team_id, ctx);
+                    }
+                    
+                    self.set_status(&format!("已自动保存球队 {} 的修改", team.name));
+                    info!("自动保存成功: 球队 {}", team.name);
+                    
+                    // 重置自动保存状态
+                    self.has_unsaved_changes = false;
+                    self.last_auto_save = Instant::now();
+                    self.auto_save_countdown = AUTO_SAVE_INTERVAL;
+                    
+                    return true;
+                },
+                Err(e) => {
+                    error!("自动保存失败: {}", e);
+                    return false;
+                }
+            }
+        }
+        
+        false
+    }
+
+    fn handle_confirm_save(&mut self, ctx: &Context) {
+        if self.confirm_dialog.confirmed {
+            if let Some(team) = self.team_details.get_edited_team() {
+                match self.database.update_team(&team) {
+                    Ok(_) => {
+                        // 刷新数据
+                        if let Err(e) = self.load_data(ctx) {
+                            error!("刷新数据失败: {}", e);
+                        }
+                        
+                        // 重新选择当前球队
+                        self.team_list.select_team_by_id(team.id);
+                        if let Some(team_id) = self.team_list.get_selected_team_id() {
+                            self.select_team(team_id, ctx);
+                        }
+                        
+                        self.show_message("成功", "球队数据已保存");
+                        self.set_status(&format!("已保存球队 {} 的修改", team.name));
+                        
+                        // 重置自动保存状态
+                        self.has_unsaved_changes = false;
+                        self.last_auto_save = Instant::now();
+                    },
+                    Err(e) => {
+                        self.show_message("错误", &format!("保存失败: {}", e));
+                        error!("保存球队数据失败: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    fn select_team(&mut self, team_id: i64, ctx: &Context) {
+        if let Some(team) = self.team_list.teams.iter().find(|t| t.id == team_id).cloned() {
+            // 更新球队详情
+            self.team_details.set_team(team);
+            
+            // 加载Logo
+            if let Some(db_dir) = self.database.get_db_directory() {
+                if let Err(e) = self.team_details.load_logo(ctx, &db_dir, team_id) {
+                    error!("加载Logo失败: {}", e);
+                }
+            }
+            
+            // 更新员工列表
+            self.staff_list.update_team_staff(team_id);
+            
+            self.set_status(&format!("已选择球队: ID={}", team_id));
+            
+            // 重置自动保存状态
+            self.has_unsaved_changes = false;
+            self.last_auto_save = Instant::now();
+        }
+    }
+
+    fn replace_logo(&mut self, ctx: &Context) {
+        if !self.database.is_connected() {
+            self.show_message("警告", "请先加载数据库");
+            return;
+        }
+
+        if let Some(team_id) = self.team_list.get_selected_team_id() {
+            let dialog = FileDialog::new()
+                .add_filter("图片文件", &["png", "jpg", "jpeg", "bmp"])
+                .show_open_single_file();
+            
+            if let Ok(Some(path)) = dialog {
+                if let Some(db_dir) = self.database.get_db_directory() {
+                    // 创建logos目录（如果不存在）
+                    let logos_dir = db_dir.join("logos");
+                    if !logos_dir.exists() {
+                        if let Err(e) = std::fs::create_dir_all(&logos_dir) {
+                            self.show_message("错误", &format!("创建logos目录失败: {}", e));
+                            error!("创建logos目录失败: {}", e);
+                            return;
+                        }
+                    }
+                    
+                    // 保存Logo
+                    let target_path = logos_dir.join(format!("{}.png", team_id));
+                    if let Err(e) = utils::save_image_as_png(&path, &target_path, 256, 256) {
+                        self.show_message("错误", &format!("保存Logo失败: {}", e));
+                        error!("保存Logo失败: {}", e);
+                        return;
+                    }
+                    
+                    // 重新加载Logo
+                    if let Err(e) = self.team_details.load_logo(ctx, &db_dir, team_id) {
+                        self.show_message("错误", &format!("加载Logo失败: {}", e));
+                        error!("加载Logo失败: {}", e);
+                        return;
+                    }
+                    
+                    self.set_status("Logo已替换");
+                }
+            }
+        } else {
+            self.show_message("警告", "请先选择一个球队");
+        }
     }
 }
 
 impl App for TeamEditorApp {
     fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
-        // 更新自动保存计时器
-        self.update_auto_save_timer();
-        
-        // 检查是否需要自动保存
-        if self.auto_save_enabled && self.has_unsaved_changes && self.auto_save_countdown == 0 {
-            self.auto_save(ctx);
-        }
-        
         // 处理对话框
         self.message_dialog.show(ctx);
         
@@ -588,73 +598,56 @@ impl App for TeamEditorApp {
             self.handle_bulk_edit(ctx);
         }
         
+        // 自动保存
+        self.update_auto_save_timer();
+        if self.auto_save_countdown == 0 {
+            self.auto_save(ctx);
+        }
+        
         // 顶部面板
-        TopBottomPanel::top("top_panel")
-            .frame(egui::Frame::none()
-                .fill(Color32::from_rgb(245, 245, 245))
-                .inner_margin(egui::Margin::symmetric(10.0, 6.0))
-                .shadow(egui::epaint::Shadow {
-                    extrusion: 1.0,
-                    color: Color32::from_black_alpha(20),
-                }))
-            .show(ctx, |ui| {
+        TopBottomPanel::top("top_panel").show(ctx, |ui| {
                 self.ui_top_panel(ctx, ui);
             });
         
         // 底部状态栏
-        TopBottomPanel::bottom("bottom_panel")
-            .frame(egui::Frame::none()
-                .fill(Color32::from_rgb(245, 245, 245))
-                .inner_margin(egui::Margin::symmetric(10.0, 4.0)))
-            .show(ctx, |ui| {
+        TopBottomPanel::bottom("bottom_panel").show(ctx, |ui| {
                 self.ui_bottom_panel(ctx, ui);
             });
         
-        // 左侧球队列表
+        // 左侧面板 - 球队列表
         SidePanel::left("team_list_panel")
-            .frame(egui::Frame::none()
-                .fill(Color32::from_rgb(250, 250, 250))
-                .inner_margin(egui::Margin::same(10.0)))
             .resizable(true)
+            .min_width(200.0)
             .default_width(250.0)
-            .width_range(200.0..=400.0)
             .show(ctx, |ui| {
                 if let Some(team_id) = self.team_list.ui(ui) {
                     self.select_team(team_id, ctx);
                 }
-                
-                // 处理刷新和导出按钮
-                ui.add_space(5.0);
-                ui.horizontal(|ui| {
-                    if crate::ui::widgets::mac_button(ui, "刷新列表") {
-                        if let Err(e) = self.load_data(ctx) {
-                            self.show_message("错误", &format!("刷新数据失败: {}", e));
-                            error!("刷新数据失败: {}", e);
-                        } else {
-                            self.set_status("列表已刷新");
-                        }
-                    }
-                    
-                    if crate::ui::widgets::mac_button(ui, "导出列表") {
-                        self.export_team_list();
-                    }
-                });
             });
         
-        // 主内容区
-        CentralPanel::default()
-            .frame(egui::Frame::none()
-                .fill(Color32::from_rgb(240, 240, 240))
-                .inner_margin(egui::Margin::same(15.0)))
+        // 右侧面板 - 员工列表
+        SidePanel::right("staff_list_panel")
+            .resizable(true)
+            .min_width(200.0)
+            .default_width(250.0)
             .show(ctx, |ui| {
-                // 添加标签页
+                if let Some(staff_idx) = self.staff_list.ui(ui) {
+                    self.edit_staff(staff_idx);
+                }
+            });
+        
+        // 中央面板
+        CentralPanel::default().show(ctx, |ui| {
+            // 选项卡
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut self.active_tab, ActiveTab::TeamDetails, "球队详情");
                     ui.selectable_value(&mut self.active_tab, ActiveTab::Visualization, "数据可视化");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::SponsorEditor, "杂项编辑器");
                 });
                 
-                ui.add_space(10.0);
+            ui.separator();
                 
+            // 根据当前选项卡显示不同内容
                 match self.active_tab {
                     ActiveTab::TeamDetails => {
                         widgets::rounded_frame(ui, |ui| {
@@ -669,15 +662,6 @@ impl App for TeamEditorApp {
                                 self.has_unsaved_changes = true;
                                 self.last_auto_save = Instant::now();
                             }
-                            
-                            ui.add_space(10.0);
-                            widgets::horizontal_separator(ui);
-                            ui.add_space(10.0);
-                            
-                            // 员工列表
-                            if let Some(staff_idx) = self.staff_list.ui(ui) {
-                                self.edit_staff(staff_idx);
-                            }
                         });
                     },
                     ActiveTab::Visualization => {
@@ -685,7 +669,19 @@ impl App for TeamEditorApp {
                             // 数据可视化
                             self.visualization.ui(ui);
                         });
-                    }
+                },
+                ActiveTab::SponsorEditor => {
+                    widgets::rounded_frame(ui, |ui| {
+                        // 显示提示信息，而不是实际的赞助商编辑器
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(50.0);
+                            ui.heading("杂项编辑器功能暂时不可用");
+                            ui.add_space(20.0);
+                            ui.label("该功能正在维护中，请稍后再试。");
+                            ui.add_space(50.0);
+                        });
+                    });
+                }
                 }
             });
     }

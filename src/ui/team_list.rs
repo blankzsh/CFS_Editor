@@ -357,9 +357,15 @@ impl TeamListView {
                 .rounding(Rounding::same(6.0))
                 .inner_margin(egui::Margin::same(8.0))
                 .show(ui, |ui| {
+                    // 使用available_height()获取可用高度，使列表填充所有剩余空间
+                    let available_height = ui.available_height();
+                    
                     ScrollArea::vertical()
-                        .max_height(400.0)
+                        .auto_shrink([false, false])
+                        .max_height(f32::INFINITY)
                         .show(ui, |ui| {
+                            ui.set_min_height(available_height);
+                            
                             for (idx, team) in self.filtered_teams.iter().enumerate() {
                                 let is_selected = Some(idx) == self.selected_index;
                                 

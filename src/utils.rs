@@ -41,4 +41,18 @@ pub fn create_logo_path(db_dir: &Path, team_id: i64) -> PathBuf {
 /// 检查文件是否存在
 pub fn file_exists(path: &Path) -> bool {
     path.exists() && path.is_file()
+}
+
+/// 将图像保存为PNG格式，并调整大小
+pub fn save_image_as_png(src_path: &Path, dst_path: &Path, width: u32, height: u32) -> Result<()> {
+    // 加载图像
+    let img = image::open(src_path)?;
+    
+    // 调整大小
+    let resized = img.resize(width, height, image::imageops::FilterType::Lanczos3);
+    
+    // 保存为PNG
+    resized.save(dst_path)?;
+    
+    Ok(())
 } 

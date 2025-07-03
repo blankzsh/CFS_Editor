@@ -1,4 +1,4 @@
-use egui::{Color32, RichText, Ui, Stroke, Rounding};
+use egui::{Color32, RichText, Ui, Stroke, Rounding, ScrollArea};
 use egui_extras::{Column, TableBuilder};
 
 use crate::data::staff::Staff;
@@ -39,18 +39,39 @@ impl StaffListView {
     pub fn ui(&mut self, ui: &mut Ui) -> Option<usize> {
         let mut selected_staff_idx = None;
 
-        widgets::titled_frame("员工信息", ui, |ui| {
-            if self.team_staff.is_empty() {
-                ui.add_space(10.0);
-                ui.label("该球队没有员工");
-                ui.add_space(10.0);
-            } else {
-                // Mac风格的表格容器
+        // 直接在ui上操作，不使用titled_frame，以确保完全控制布局
+        ui.vertical(|ui| {
+            // 添加标题
+            ui.heading("员工信息");
+            ui.add_space(4.0);
+            ui.separator();
+            ui.add_space(8.0);
+            
+            // 获取可用高度
+            let available_height = ui.available_height() - 40.0; // 减去底部提示的空间
+            
+            // 表格容器
                 egui::Frame::none()
                     .fill(Color32::from_rgb(255, 255, 255))
                     .stroke(Stroke::new(1.0, Color32::from_rgb(220, 220, 220)))
                     .rounding(Rounding::same(6.0))
                     .inner_margin(egui::Margin::same(8.0))
+                .show(ui, |ui| {
+                    // 强制设置高度以填充可用空间
+                    ui.set_min_height(available_height);
+                    
+                    if self.team_staff.is_empty() {
+                        // 没有员工时显示提示信息
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(available_height / 3.0);
+                            ui.label(RichText::new("该球队没有员工").size(16.0).color(Color32::GRAY));
+                            ui.add_space(10.0);
+                            ui.label(RichText::new("请选择其他球队查看").size(14.0).color(Color32::GRAY));
+                        });
+                    } else {
+                        // 有员工时显示表格
+                        ScrollArea::vertical()
+                            .auto_shrink([false, false])
                     .show(ui, |ui| {
                         TableBuilder::new(ui)
                             .striped(true)
@@ -109,9 +130,12 @@ impl StaffListView {
                                     });
                                 }
                             });
+                            });
+                    }
                     });
 
                 ui.add_space(8.0);
+            if !self.team_staff.is_empty() {
                 ui.small("双击员工记录可编辑");
             }
         });

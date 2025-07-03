@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // 在发布模式下隐藏控制台窗口
+
 mod app;
 mod data;
 mod error;
@@ -15,8 +17,8 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([900.0, 700.0])
-            .with_min_inner_size([750.0, 550.0]),
+            .with_inner_size([1100.0, 800.0])
+            .with_min_inner_size([800.0, 500.0]),
         centered: true,
         ..Default::default()
     };
